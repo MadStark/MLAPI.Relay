@@ -2,11 +2,12 @@
 
   <PropertyGroup>
     <RuntimeIdentifiers>win-x64;linux-x64;osx-x64</RuntimeIdentifiers>
+    <LangVersion>default</LangVersion>
   </PropertyGroup>
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp2.0</TargetFramework>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <FileVersion>0.0.0.2</FileVersion>
     <Version>1.0.0.0</Version>
@@ -44,6 +45,29 @@
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
     </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ContentWithTargetPath Include="Libs\libUNETServerDLL.dylib">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <TargetPath>libUNETServerDLL.dylib</TargetPath>
+    </ContentWithTargetPath>
+    <None Update="Libs\libUNETServerDLL.dylib" />
+    <ContentWithTargetPath Include="Libs\libUNETServerDLL.so">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <TargetPath>libUNETServerDLL.so</TargetPath>
+    </ContentWithTargetPath>
+    <None Update="Libs\libUNETServerDLL.so" />
+    <ContentWithTargetPath Include="Libs\Server.Updater.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <TargetPath>Server.Updater.dll</TargetPath>
+    </ContentWithTargetPath>
+    <None Update="Libs\Server.Updater.dll" />
+    <ContentWithTargetPath Include="Libs\UNETServerDLL.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <TargetPath>UNETServerDLL.dll</TargetPath>
+    </ContentWithTargetPath>
+    <None Update="UNETServerDLL.dll" />
   </ItemGroup>
 
 </Project>
