@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace MLAPI.Relay
 {
@@ -30,9 +33,18 @@ namespace MLAPI.Relay
         public ulong ServerConnectionId { get => IsValid ? Server.ConnectionId : 0UL; }
         public ulong RoomId { get; private set; }
         public Client Server { get; private set; }
+        public string RoomKey { get; private set; }
 
         //Key connectionId, value Client
         private readonly Dictionary<ulong, Client> connectedClients = new Dictionary<ulong, Client>();
+
+
+        public Room(Client server)
+        {
+            Server = server;
+            RoomId = GenerateRoomId();
+            RoomKey = RandomRoomID();
+        }
 
         public bool HandleClientDisconnect(ulong connectionId, bool serverDisconnect = false)
         {
@@ -48,7 +60,7 @@ namespace MLAPI.Relay
                 }
 
                 // Delete the room
-                Program.Rooms.Remove(this);
+                Program.RemoveRoom(this);
 
                 foreach (EndPoint key in Program.ServerAddressToRoom.Keys)
                 {
@@ -176,10 +188,25 @@ namespace MLAPI.Relay
             if (!IsValid) throw new ObjectDisposedException("Attempt to use an invalid room!");
         }
 
-        public Room(Client server)
+        private static string RandomRoomID()
         {
-            this.Server = server;
-            RoomId = GenerateRoomId();
+            const int length = 7;
+            const string valid = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+            StringBuilder res = new StringBuilder();
+            using (RNGCryptoServiceProvider rng = new RNGCryptoServiceProvider())
+            {
+                byte[] uintBuffer = new byte[sizeof(uint)];
+
+                for (int i = 0; i < length; i++)
+                {
+                    rng.GetBytes(uintBuffer);
+                    uint num = BitConverter.ToUInt32(uintBuffer, 0);
+                    res.Append(valid[(int) (num % (uint) valid.Length)]);
+                }
+            }
+
+            return res.ToString();
         }
     }
 }

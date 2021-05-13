@@ -1,20 +1,22 @@
-﻿using MLAPI.Relay.Transports;
-using Newtonsoft.Json;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
-using System.Reflection;
+using System.Text;
 using System.Threading;
+using Microsoft.Azure.Cosmos.Table;
 using UnetServerDll;
+using MLAPI.Relay.Transports;
+using Newtonsoft.Json;
+using CloudStorageAccount = Microsoft.Azure.Cosmos.Table.CloudStorageAccount;
 
 namespace MLAPI.Relay
 {
     public static class Program
     {
         public static Transport Transport;
-        public static readonly List<Room> Rooms = new List<Room>();
+        private static readonly List<Room> Rooms = new List<Room>();
         public static readonly Dictionary<EndPoint, Room> ServerAddressToRoom = new Dictionary<EndPoint, Room>();
         public static byte DEFAULT_CHANNEL_BYTE = 0;
 
@@ -24,9 +26,11 @@ namespace MLAPI.Relay
 
         public static RelayConfig Config = null;
 
+        private static CloudTable roomsTable;
+
         private static void Main(string[] args)
         {
-            string configPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "config.json");
+            string configPath = "config.json";
 
             if (!File.Exists(configPath))
             {
@@ -196,6 +200,23 @@ namespace MLAPI.Relay
 
             Program.MESSAGE_BUFFER = new byte[Config.BufferSize];
 
+            if (string.IsNullOrWhiteSpace(Config.IpAddress))
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("[ERROR] Set the IpAddress of the relay in the config file.");
+                Environment.Exit(1);
+            }
+            if (string.IsNullOrWhiteSpace(Config.AzureTableConnectionString))
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("[ERROR] Set the connection string of the rooms Azure table in the config file.");
+                Environment.Exit(1);
+            }
+
+            CloudStorageAccount storageAccount = CloudStorageAccount.Parse(Config.AzureTableConnectionString);
+            CloudTableClient tableClient = storageAccount.CreateCloudTableClient();
+            roomsTable = tableClient.GetTableReference("rooms");
+
             try
             {
                 Console.WriteLine("[INFO] Starting server...");
@@ -282,10 +303,15 @@ namespace MLAPI.Relay
                                             // Make address IPv6
                                             endpoint = new IPEndPoint(endpoint.Address.MapToIPv6(), endpoint.Port);
 
-                                            if (Config.EnableRuntimeMetaLogging) Console.WriteLine("[INFO] Server started from " + endpoint);
+                                            if (Config.EnableRuntimeMetaLogging) Console.WriteLine("[INFO] Server started from " + endpoint + " on relay ");
 
                                             ServerAddressToRoom.Add(endpoint, room);
                                         }
+
+                                        // Register room on Azure
+                                        RoomEntity roomEntity = new(room.RoomKey, endpoint.Address.ToString(), endpoint.Port, Config.IpAddress);
+                                        //TODO: Make this async?
+                                        roomsTable.ExecuteAsync(TableOperation.Insert(roomEntity)).GetAwaiter().GetResult();
 
                                         byte[] ipv6AddressBuffer;
                                         IPAddress ipAddress = endpoint.Address;
@@ -317,6 +343,25 @@ namespace MLAPI.Relay
 
                                         // Send connect to client
                                         Transport.Send(new ArraySegment<byte>(MESSAGE_BUFFER, 0, 19), DEFAULT_CHANNEL_BYTE, connectionId);
+
+                                        // Send room ID back to host
+                                        int roomReportMsgIndex = 0;
+                                        MESSAGE_BUFFER[roomReportMsgIndex++] = (byte) 22;   // NAMED_MESSAGE = 22
+                                        MESSAGE_BUFFER[roomReportMsgIndex++] = (byte) 249;  // 249
+                                        MESSAGE_BUFFER[roomReportMsgIndex++] = (byte) 41;   // 41
+                                        MESSAGE_BUFFER[roomReportMsgIndex++] = (byte) 23;   // 23
+
+                                        // Room ID
+                                        byte[] roomKeyBytes = Encoding.ASCII.GetBytes(room.RoomKey);
+                                        for (int i = 0; i < roomKeyBytes.Length; i++)
+                                            MESSAGE_BUFFER[roomReportMsgIndex++] = roomKeyBytes[i];
+
+                                        // 02 00 00 00 00 00 00 00 02
+                                        MESSAGE_BUFFER[roomReportMsgIndex++] = (byte) MessageType.Data;
+                                        for (int i = 0; i < 7; i++) MESSAGE_BUFFER[roomReportMsgIndex++] = 0; // Header padding
+                                        MESSAGE_BUFFER[roomReportMsgIndex++] = (byte) MessageType.Data;
+
+                                        Transport.Send(new ArraySegment<byte>(MESSAGE_BUFFER, 0, roomReportMsgIndex), DEFAULT_CHANNEL_BYTE, connectionId);
                                     }
                                     break;
                                 case MessageType.ConnectToServer:
@@ -527,6 +572,14 @@ namespace MLAPI.Relay
             }
 
             return false;
+        }
+
+        public static void RemoveRoom(Room room)
+        {
+            Rooms.Remove(room);
+            TableResult retrieveRoomResult = roomsTable.ExecuteAsync(TableOperation.Retrieve<RoomEntity>("room", room.RoomKey)).GetAwaiter().GetResult();
+            RoomEntity roomEntity = retrieveRoomResult.Result as RoomEntity;
+            roomsTable.ExecuteAsync(TableOperation.Delete(roomEntity)).GetAwaiter().GetResult();
         }
     }
 

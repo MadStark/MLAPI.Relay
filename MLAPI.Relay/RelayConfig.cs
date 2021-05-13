@@ -18,6 +18,8 @@ namespace MLAPI.Relay
         public int MaxTemporaryAlloc = 1024 * 64;
         public ushort ListenPort = 8888;
         public uint TicksPerSecond = 64;
+        public string IpAddress = null;
+        public string AzureTableConnectionString = null;
     }
 
     public enum TransportType
